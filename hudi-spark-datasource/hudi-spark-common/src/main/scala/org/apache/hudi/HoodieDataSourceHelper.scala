@@ -26,8 +26,9 @@ import org.apache.hudi.internal.schema.InternalSchema
 import org.apache.hudi.internal.schema.utils.SerDeHelper
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{PredicateHelper, SpecificInternalRow, UnsafeProjection}
+import org.apache.spark.sql.catalyst.expressions.PredicateHelper
 import org.apache.spark.sql.execution.datasources.PartitionedFile
+import org.apache.spark.sql.execution.datasources.orc.OrcFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.sources.Filter
 import org.apache.spark.sql.types.StructType
@@ -70,10 +71,41 @@ object HoodieDataSourceHelper extends PredicateHelper with SparkAdapterSupport {
     }
   }
 
+  /**
+   * Wrapper `buildReaderWithPartitionValues` of [[OrcFileFormat]]
+   * to deal with [[ColumnarBatch]] when enable orc vectorized reader if necessary.
+   */
+  def buildHoodieOrcReader(sparkSession: SparkSession,
+                           dataSchema: StructType,
+                           partitionSchema: StructType,
+                           requiredSchema: StructType,
+                           filters: Seq[Filter],
+                           options: Map[String, String],
+                           hadoopConf: Configuration): PartitionedFile => Iterator[InternalRow] = {
+
+    val readParquetFile: PartitionedFile => Iterator[Any] = new OrcFileFormat().buildReaderWithPartitionValues(
+      sparkSession = sparkSession,
+      dataSchema = dataSchema,
+      partitionSchema = partitionSchema,
+      requiredSchema = requiredSchema,
+      filters = filters,
+      options = options,
+      hadoopConf = hadoopConf
+    )
+
+    file: PartitionedFile => {
+      val iter = readParquetFile(file)
+      iter.flatMap {
+        case r: InternalRow => Seq(r)
+        case b: ColumnarBatch => b.rowIterator().asScala
+      }
+    }
+  }
+
   def splitFiles(
-      sparkSession: SparkSession,
-      file: FileStatus,
-      partitionValues: InternalRow): Seq[PartitionedFile] = {
+                  sparkSession: SparkSession,
+                  file: FileStatus,
+                  partitionValues: InternalRow): Seq[PartitionedFile] = {
     val filePath = file.getPath
     val maxSplitBytes = sparkSession.sessionState.conf.filesMaxPartitionBytes
     (0L until file.getLen by maxSplitBytes).map { offset =>
@@ -84,14 +116,14 @@ object HoodieDataSourceHelper extends PredicateHelper with SparkAdapterSupport {
   }
 
   /**
-    * Set internalSchema evolution parameters to configuration.
-    * spark will broadcast them to each executor, we use those parameters to do schema evolution.
-    *
-    * @param conf hadoop conf.
-    * @param internalSchema internalschema for query.
-    * @param tablePath hoodie table base path.
-    * @param validCommits valid commits, using give validCommits to validate all legal histroy Schema files, and return the latest one.
-    */
+   * Set internalSchema evolution parameters to configuration.
+   * spark will broadcast them to each executor, we use those parameters to do schema evolution.
+   *
+   * @param conf           hadoop conf.
+   * @param internalSchema internalschema for query.
+   * @param tablePath      hoodie table base path.
+   * @param validCommits   valid commits, using give validCommits to validate all legal histroy Schema files, and return the latest one.
+   */
   def getConfigurationWithInternalSchema(conf: Configuration, internalSchema: InternalSchema, tablePath: String, validCommits: String): Configuration = {
     val querySchemaString = SerDeHelper.toJson(internalSchema)
     if (!isNullOrEmpty(querySchemaString)) {

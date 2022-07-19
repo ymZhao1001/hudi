@@ -134,7 +134,7 @@
       <groupId>org.apache.orc</groupId>
       <artifactId>orc-core</artifactId>
       <version>${orc.version}</version>
-      <classifier>nohive</classifier>
+<!--      <classifier>nohive</classifier>-->
     </dependency>
 
     <!-- Httpcomponents -->

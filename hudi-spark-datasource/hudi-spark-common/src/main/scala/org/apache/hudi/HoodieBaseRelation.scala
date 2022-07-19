@@ -20,18 +20,27 @@ package org.apache.hudi
 import org.apache.avro.Schema
 import org.apache.avro.generic.GenericRecord
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileStatus, Path}
+import org.apache.hadoop.fs.FileStatus
+import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hbase.io.hfile.CacheConfig
 import org.apache.hadoop.mapred.JobConf
-import org.apache.hudi.HoodieBaseRelation.{convertToAvroSchema, createHFileReader, generateUnsafeProjection, getPartitionPath}
+import org.apache.hudi.HoodieBaseRelation.convertToAvroSchema
+import org.apache.hudi.HoodieBaseRelation.createHFileReader
+import org.apache.hudi.HoodieBaseRelation.generateUnsafeProjection
+import org.apache.hudi.HoodieBaseRelation.getPartitionPath
 import org.apache.hudi.HoodieConversionUtils.toScalaOption
 import org.apache.hudi.avro.HoodieAvroUtils
-import org.apache.hudi.common.config.{HoodieMetadataConfig, SerializableConfiguration}
+import org.apache.hudi.common.config.HoodieMetadataConfig
+import org.apache.hudi.common.config.SerializableConfiguration
 import org.apache.hudi.common.fs.FSUtils
-import org.apache.hudi.common.model.{HoodieFileFormat, HoodieRecord}
-import org.apache.hudi.common.table.timeline.{HoodieInstant, HoodieTimeline}
+import org.apache.hudi.common.model.HoodieFileFormat
+import org.apache.hudi.common.model.HoodieRecord
+import org.apache.hudi.common.table.timeline.HoodieInstant
+import org.apache.hudi.common.table.timeline.HoodieTimeline
 import org.apache.hudi.common.table.view.HoodieTableFileSystemView
-import org.apache.hudi.common.table.{HoodieTableConfig, HoodieTableMetaClient, TableSchemaResolver}
+import org.apache.hudi.common.table.HoodieTableConfig
+import org.apache.hudi.common.table.HoodieTableMetaClient
+import org.apache.hudi.common.table.TableSchemaResolver
 import org.apache.hudi.common.util.StringUtils
 import org.apache.hudi.common.util.ValidationUtils.checkState
 import org.apache.hudi.internal.schema.InternalSchema
@@ -41,20 +50,31 @@ import org.apache.spark.execution.datasources.HoodieInMemoryFileIndex
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.expressions.{Expression, SubqueryExpression}
+import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.SubqueryExpression
 import org.apache.spark.sql.execution.FileRelation
-import org.apache.spark.sql.execution.datasources.{FileStatusCache, PartitionedFile, PartitioningUtils}
+import org.apache.spark.sql.execution.datasources.FileStatusCache
+import org.apache.spark.sql.execution.datasources.PartitionedFile
+import org.apache.spark.sql.execution.datasources.PartitioningUtils
 import org.apache.spark.sql.hudi.HoodieSqlCommonUtils
-import org.apache.spark.sql.sources.{BaseRelation, Filter, PrunedFilteredScan}
-import org.apache.spark.sql.types.{StringType, StructField, StructType}
-import org.apache.spark.sql.{Row, SQLContext, SparkSession}
+import org.apache.spark.sql.sources.BaseRelation
+import org.apache.spark.sql.sources.Filter
+import org.apache.spark.sql.sources.PrunedFilteredScan
+import org.apache.spark.sql.types.StringType
+import org.apache.spark.sql.types.StructField
+import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.Row
+import org.apache.spark.sql.SQLContext
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.unsafe.types.UTF8String
 
 import java.net.URI
 import java.util.Locale
 import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
-import scala.util.{Failure, Success, Try}
+import scala.util.Failure
+import scala.util.Success
+import scala.util.Try
 
 trait HoodieFileSplit {}
 
@@ -100,13 +120,13 @@ abstract class HoodieBaseRelation(val sqlContext: SQLContext,
   //          identified as its (unique) primary key w/in its payload (this is a limitation of [[SimpleKeyGenerator]],
   //          which is the only [[KeyGenerator]] permitted for virtual-keys payloads)
   protected lazy val recordKeyField: String =
-    if (tableConfig.populateMetaFields()) {
-      HoodieRecord.RECORD_KEY_METADATA_FIELD
-    } else {
-      val keyFields = tableConfig.getRecordKeyFields.get()
-      checkState(keyFields.length == 1)
-      keyFields.head
-    }
+  if (tableConfig.populateMetaFields()) {
+    HoodieRecord.RECORD_KEY_METADATA_FIELD
+  } else {
+    val keyFields = tableConfig.getRecordKeyFields.get()
+    checkState(keyFields.length == 1)
+    keyFields.head
+  }
 
   protected lazy val preCombineFieldOpt: Option[String] =
     Option(tableConfig.getPreCombineField)
@@ -151,9 +171,9 @@ abstract class HoodieBaseRelation(val sqlContext: SQLContext,
   /**
    * Controls whether partition values (ie values of partition columns) should be
    * <ol>
-   *    <li>Extracted from partition path and appended to individual rows read from the data file (we
-   *    delegate this to Spark's [[ParquetFileFormat]])</li>
-   *    <li>Read from the data-file as is (by default Hudi persists all columns including partition ones)</li>
+   * <li>Extracted from partition path and appended to individual rows read from the data file (we
+   * delegate this to Spark's [[ParquetFileFormat]])</li>
+   * <li>Read from the data-file as is (by default Hudi persists all columns including partition ones)</li>
    * </ol>
    *
    * This flag is only be relevant in conjunction with the usage of [["hoodie.datasource.write.drop.partition.columns"]]
@@ -162,11 +182,11 @@ abstract class HoodieBaseRelation(val sqlContext: SQLContext,
    * to every row only in the fetched dataset.
    *
    * NOTE: Partition values extracted from partition path might be deviating from the values of the original
-   *       partition columns: for ex, if originally as partition column was used column [[ts]] bearing epoch
-   *       timestamp, which was used by [[TimestampBasedKeyGenerator]] to generate partition path of the format
-   *       [["yyyy/mm/dd"]], appended partition value would bear the format verbatim as it was used in the
-   *       partition path, meaning that string value of "2022/01/01" will be appended, and not its original
-   *       representation
+   * partition columns: for ex, if originally as partition column was used column [[ts]] bearing epoch
+   * timestamp, which was used by [[TimestampBasedKeyGenerator]] to generate partition path of the format
+   * [["yyyy/mm/dd"]], appended partition value would bear the format verbatim as it was used in the
+   * partition path, meaning that string value of "2022/01/01" will be appended, and not its original
+   * representation
    */
   protected val shouldExtractPartitionValuesFromPartitionPath: Boolean = {
     // Controls whether partition columns (which are the source for the partition path values) should
@@ -275,7 +295,7 @@ abstract class HoodieBaseRelation(val sqlContext: SQLContext,
     //       Note that, by default, partition columns are not omitted therefore specifying
     //       partition schema for reader is not required
     val (partitionSchema, dataSchema, prunedRequiredSchema) =
-      tryPrunePartitionColumns(tableSchema, requiredSchema)
+    tryPrunePartitionColumns(tableSchema, requiredSchema)
 
     if (fileSplits.isEmpty) {
       sparkSession.sparkContext.emptyRDD
@@ -321,7 +341,7 @@ abstract class HoodieBaseRelation(val sqlContext: SQLContext,
    * performing pruning if necessary
    *
    * @param partitionFilters partition filters to be applied
-   * @param dataFilters data filters to be applied
+   * @param dataFilters      data filters to be applied
    * @return list of [[FileSplit]] to fetch records from
    */
   protected def collectFileSplits(partitionFilters: Seq[Expression], dataFilters: Seq[Expression]): Seq[FileSplit]
@@ -465,12 +485,24 @@ abstract class HoodieBaseRelation(val sqlContext: SQLContext,
       appendPartitionValues = shouldExtractPartitionValuesFromPartitionPath
     )
 
+    val orcReader = HoodieDataSourceHelper.buildHoodieOrcReader(
+      sparkSession = spark,
+      dataSchema = dataSchema.structTypeSchema,
+      partitionSchema = partitionSchema,
+      requiredSchema = requiredSchema.structTypeSchema,
+      filters = filters,
+      options = options,
+      hadoopConf = hadoopConf
+    )
+
     partitionedFile => {
       val extension = FSUtils.getFileExtension(partitionedFile.filePath)
       if (HoodieFileFormat.PARQUET.getFileExtension.equals(extension)) {
         parquetReader.apply(partitionedFile)
       } else if (HoodieFileFormat.HFILE.getFileExtension.equals(extension)) {
         hfileReader.apply(partitionedFile)
+      } else if (HoodieFileFormat.ORC.getFileExtension.equals(extension)) {
+        orcReader.apply(partitionedFile)
       } else {
         throw new UnsupportedOperationException(s"Base file format not supported by Spark DataSource ($partitionedFile)")
       }
