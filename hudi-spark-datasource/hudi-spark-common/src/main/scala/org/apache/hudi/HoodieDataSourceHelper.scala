@@ -83,7 +83,7 @@ object HoodieDataSourceHelper extends PredicateHelper with SparkAdapterSupport {
                            options: Map[String, String],
                            hadoopConf: Configuration): PartitionedFile => Iterator[InternalRow] = {
 
-    val readParquetFile: PartitionedFile => Iterator[Any] = new OrcFileFormat().buildReaderWithPartitionValues(
+    val readOrcFile: PartitionedFile => Iterator[Any] = new OrcFileFormat().buildReaderWithPartitionValues(
       sparkSession = sparkSession,
       dataSchema = dataSchema,
       partitionSchema = partitionSchema,
@@ -94,7 +94,7 @@ object HoodieDataSourceHelper extends PredicateHelper with SparkAdapterSupport {
     )
 
     file: PartitionedFile => {
-      val iter = readParquetFile(file)
+      val iter = readOrcFile(file)
       iter.flatMap {
         case r: InternalRow => Seq(r)
         case b: ColumnarBatch => b.rowIterator().asScala
